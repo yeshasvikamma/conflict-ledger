@@ -163,3 +163,32 @@ create index if not exists idx_raw_items_origin      on raw_items (origin_type);
 create index if not exists idx_claims_type_date      on claims (claim_type, date_occurred);
 create index if not exists idx_sources_tier          on sources (discovery_tier);
 create index if not exists idx_snapshots_key_date    on counter_snapshots (counter_key, as_of_date);
+
+-- -----------------------------------------------------------------------------
+-- Public read policies for the anon API.
+-- -----------------------------------------------------------------------------
+-- This is a public transparency product: the API reads through the Supabase anon
+-- key and exposes only read endpoints. Writes remain service-role only.
+alter table sources enable row level security;
+drop policy if exists sources_anon_read on sources;
+create policy sources_anon_read on sources
+  for select to anon
+  using (true);
+
+alter table raw_items enable row level security;
+drop policy if exists raw_items_anon_read on raw_items;
+create policy raw_items_anon_read on raw_items
+  for select to anon
+  using (true);
+
+alter table claims enable row level security;
+drop policy if exists claims_anon_read on claims;
+create policy claims_anon_read on claims
+  for select to anon
+  using (true);
+
+alter table counter_snapshots enable row level security;
+drop policy if exists counter_snapshots_anon_read on counter_snapshots;
+create policy counter_snapshots_anon_read on counter_snapshots
+  for select to anon
+  using (true);
