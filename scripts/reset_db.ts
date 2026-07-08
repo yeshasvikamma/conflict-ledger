@@ -9,11 +9,14 @@
 
 import 'dotenv/config';
 import { serviceClient } from '../shared/supabaseClient.ts';
+import type { Database } from '../shared/types.ts';
 
 const db = serviceClient();
+type TableName = keyof Database['public']['Tables'];
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 // Child tables before parents to respect foreign keys.
-const TABLES_IN_ORDER = [
+const TABLES_IN_ORDER: TableName[] = [
   'event_claims',
   'claim_entities',
   'counter_snapshots',
@@ -25,21 +28,25 @@ const TABLES_IN_ORDER = [
   'sources',
 ];
 
+const DELETE_FILTER_COLUMN: Record<TableName, string> = {
+  event_claims: 'claim_id',
+  claim_entities: 'claim_id',
+  counter_snapshots: 'id',
+  zones: 'id',
+  claims: 'id',
+  events: 'id',
+  entities: 'id',
+  raw_items: 'id',
+  sources: 'id',
+};
+
 async function reset(): Promise<void> {
   for (const table of TABLES_IN_ORDER) {
-    // Delete everything. The neq on a never-matching uuid matches all rows.
-    const { error } = await db
-      .from(table)
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000');
+    // Delete everything. The neq on a valid, never-matching uuid matches all rows.
+    const filterColumn = DELETE_FILTER_COLUMN[table];
+    const { error } = await db.from(table).delete().neq(filterColumn, ZERO_UUID);
     if (error) {
-      // event_claims / claim_entities have no `id` column; fall back to a broad delete.
-      const { error: fallbackErr } = await db.from(table).delete().gte('claim_id', '');
-      if (fallbackErr) {
-        console.warn(`[reset_db] could not clear ${table}: ${error.message}`);
-      } else {
-        console.log(`[reset_db] cleared ${table}`);
-      }
+      console.warn(`[reset_db] could not clear ${table}: ${error.message}`);
     } else {
       console.log(`[reset_db] cleared ${table}`);
     }
