@@ -192,3 +192,15 @@ drop policy if exists counter_snapshots_anon_read on counter_snapshots;
 create policy counter_snapshots_anon_read on counter_snapshots
   for select to anon
   using (true);
+
+alter table events enable row level security;
+drop policy if exists events_anon_read on events;
+create policy events_anon_read on events
+  for select to anon
+  using (true);
+
+alter table event_claims enable row level security;
+drop policy if exists event_claims_anon_read on event_claims;
+create policy event_claims_anon_read on event_claims
+  for select to anon
+  using (true);
