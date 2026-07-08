@@ -16,6 +16,11 @@ import {
 } from './extract.ts';
 import { computeSnapshots, type ComputeSnapshotsOptions } from './snapshots.ts';
 import {
+  runClustering,
+  type ClusterEmbedder,
+  type RunClusteringOptions,
+} from './cluster.ts';
+import {
   claimsDisagree,
   runDisagreementDetection,
   type ClaimForCompare,
@@ -472,6 +477,10 @@ class FakeSupabaseClient {
   asSnapshotsDb(): ComputeSnapshotsOptions['db'] {
     return this as unknown as ComputeSnapshotsOptions['db'];
   }
+
+  asClusterDb(): RunClusteringOptions['db'] {
+    return this as unknown as RunClusteringOptions['db'];
+  }
 }
 
 afterEach(() => {
@@ -696,7 +705,56 @@ describe('pipeline — integration (implement, then convert from todo)', () => {
   });
 
   // T5: cluster groups two same-event claims from different sources into one event.
-  it.todo('T5: clustering groups same-event claims');
+  it('T5: clustering groups same-event claims', async () => {
+    const claimA = makeClaim({
+      id: 'cluster-claim-a',
+      raw_item_id: 'cluster-raw-item-a',
+      raw_quote: 'Officials said 15 people were killed in Rafah.',
+      value: { count: 15, group: 'palestinian', subtype: 'total' },
+    });
+    const claimB = makeClaim({
+      id: 'cluster-claim-b',
+      raw_item_id: 'cluster-raw-item-b',
+      raw_quote: 'Health officials reported 20 people were killed in Rafah.',
+      value: { count: 20, group: 'palestinian', subtype: 'total' },
+    });
+    const db = new FakeSupabaseClient(
+      [
+        makeRawItem({
+          id: 'cluster-raw-item-a',
+          source_id: 'source-a',
+          headline: 'Rafah casualties reported after strikes',
+        }),
+        makeRawItem({
+          id: 'cluster-raw-item-b',
+          source_id: 'source-b',
+          headline: 'Rafah casualties reported after airstrikes',
+        }),
+      ],
+      [claimA, claimB],
+    );
+    const embedder = vi.fn<ClusterEmbedder>().mockResolvedValueOnce([
+      [1, 0, 0],
+      [0.999, 0.001, 0],
+    ]);
+
+    await runClustering({ db: db.asClusterDb(), embedder });
+
+    expect(embedder).toHaveBeenCalledTimes(1);
+    expect(db.events).toHaveLength(1);
+    expect(db.eventClaims).toHaveLength(2);
+    expect(db.events[0]).toMatchObject({
+      category: CASUALTY_EVENT_CATEGORY,
+      event_date: '2024-05-01',
+      location: 'Rafah',
+      has_disagreement: false,
+      disagreement_note: null,
+    });
+    const linked = db.eventClaims
+      .map((row) => row.claim_id)
+      .sort((a, b) => a.localeCompare(b));
+    expect(linked).toEqual(['cluster-claim-a', 'cluster-claim-b']);
+  });
 
   // T6: a failed (timeout/429) LLM call leaves processed=false; a completed call
   // with zero valid claims sets processed=true.
@@ -738,6 +796,114 @@ describe('pipeline — integration (implement, then convert from todo)', () => {
           entry.raw_item_id === emptyCompletedRow.id,
       ),
     ).toBe(true);
+  });
+
+  it('clustering does not duplicate or mutate an existing disagreement event', async () => {
+    const claimA = makeClaim({
+      id: 'disagree-cluster-a',
+      raw_item_id: 'disagree-raw-a',
+      raw_quote: 'Medical officials said 15 people were killed in Rafah.',
+      value: { count: 15, group: 'palestinian', subtype: 'total' },
+    });
+    const claimB = makeClaim({
+      id: 'disagree-cluster-b',
+      raw_item_id: 'disagree-raw-b',
+      raw_quote: 'The health ministry said 20 people were killed in Rafah.',
+      value: { count: 20, group: 'palestinian', subtype: 'total' },
+    });
+    const db = new FakeSupabaseClient(
+      [
+        makeRawItem({
+          id: 'disagree-raw-a',
+          headline: 'Rafah deaths reported by officials',
+        }),
+        makeRawItem({
+          id: 'disagree-raw-b',
+          headline: 'Rafah death toll rises',
+        }),
+      ],
+      [claimA, claimB],
+    );
+    db.events = [
+      {
+        id: 'existing-disagreement-event',
+        title: null,
+        neutral_summary: null,
+        location: 'Rafah',
+        lat: null,
+        lng: null,
+        category: CASUALTY_EVENT_CATEGORY,
+        event_date: '2024-05-01',
+        framing_notes: null,
+        has_disagreement: true,
+        disagreement_note: 'Source A reports 15; Source B reports 20.',
+        first_seen_at: '2024-05-01T00:00:00Z',
+        last_updated_at: '2024-05-01T00:00:00Z',
+      },
+    ];
+    db.eventClaims = [
+      { event_id: 'existing-disagreement-event', claim_id: 'disagree-cluster-a' },
+      { event_id: 'existing-disagreement-event', claim_id: 'disagree-cluster-b' },
+    ];
+    const eventsBefore = JSON.stringify(db.events);
+    const embedder = vi.fn<ClusterEmbedder>().mockResolvedValueOnce([
+      [1, 0, 0],
+      [1, 0, 0],
+    ]);
+
+    await runClustering({ db: db.asClusterDb(), embedder });
+
+    expect(embedder).not.toHaveBeenCalled();
+    expect(db.events).toHaveLength(1);
+    expect(db.eventClaims).toHaveLength(2);
+    expect(JSON.stringify(db.events)).toBe(eventsBefore);
+    expect(db.events[0]?.has_disagreement).toBe(true);
+  });
+
+  it('clustering is idempotent across repeated runs', async () => {
+    const claimA = makeClaim({
+      id: 'idempotent-cluster-a',
+      raw_item_id: 'idempotent-raw-a',
+    });
+    const claimB = makeClaim({
+      id: 'idempotent-cluster-b',
+      raw_item_id: 'idempotent-raw-b',
+      value: { count: 20, group: 'palestinian', subtype: 'total' },
+    });
+    const db = new FakeSupabaseClient(
+      [
+        makeRawItem({
+          id: 'idempotent-raw-a',
+          headline: 'Rafah casualties in latest update',
+        }),
+        makeRawItem({
+          id: 'idempotent-raw-b',
+          headline: 'Latest Rafah casualty update',
+        }),
+      ],
+      [claimA, claimB],
+    );
+    const embedder = vi
+      .fn<ClusterEmbedder>()
+      .mockResolvedValueOnce([
+        [0.9, 0.1, 0],
+        [0.89, 0.11, 0],
+      ])
+      .mockResolvedValueOnce([
+        [0.9, 0.1, 0],
+        [0.89, 0.11, 0],
+      ]);
+
+    await runClustering({ db: db.asClusterDb(), embedder, similarityThreshold: 0.8 });
+    await runClustering({ db: db.asClusterDb(), embedder, similarityThreshold: 0.8 });
+
+    expect(db.events).toHaveLength(1);
+    expect(db.eventClaims).toHaveLength(2);
+    const links = db.eventClaims
+      .map((row) => `${row.event_id}:${row.claim_id}`)
+      .sort((a, b) => a.localeCompare(b));
+    expect(new Set(links).size).toBe(2);
+    expect(embedder).toHaveBeenCalledTimes(1);
   });
 });
 
