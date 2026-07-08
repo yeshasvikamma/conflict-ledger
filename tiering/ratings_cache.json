@@ -1,10 +1,312 @@
 {
-  "_comment": "One-time scrape of a public reliability/bias dataset (Media Bias/Fact Check or Ad Fontes), keyed by domain. Person B populates this to >=50 entries at kickoff. These few are placeholders so the file parses; replace with the real scrape. Values record what the THIRD-PARTY source says — not our opinion.",
-  "aljazeera.com": { "reliability": "mostly-factual", "lean": "left-center" },
-  "bbc.com": { "reliability": "high", "lean": "center" },
-  "nytimes.com": { "reliability": "high", "lean": "left-center" },
-  "wsj.com": { "reliability": "high", "lean": "right-center" },
-  "theguardian.com": { "reliability": "mostly-factual", "lean": "left-center" },
-  "haaretz.com": { "reliability": "high", "lean": "left-center" },
-  "timesofisrael.com": { "reliability": "mostly-factual", "lean": "center" }
+  "abcnews.go.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "afp.com": {
+    "reliability": "Very High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "aljazeera.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "apnews.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "axios.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "bbc.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "bloomberg.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "breitbart.com": {
+    "reliability": "Mixed",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "businessinsider.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "cbsnews.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "cnbc.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "cnn.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "csmonitor.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "dailycaller.com": {
+    "reliability": "Mixed",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "dailykos.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "dailywire.com": {
+    "reliability": "Mixed",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "dw.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "economist.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "euronews.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "factcheck.org": {
+    "reliability": "Very High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "forbes.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "foreignpolicy.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "foxnews.com": {
+    "reliability": "Mixed",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "france24.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "haaretz.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "huffpost.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "independent.co.uk": {
+    "reliability": "Mostly Factual",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "jpost.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "latimes.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "middleeasteye.net": {
+    "reliability": "Mixed",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "msnbc.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "nationalreview.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "nbcnews.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "newsmax.com": {
+    "reliability": "Mixed",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "newsweek.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "npr.org": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "nypost.com": {
+    "reliability": "Mixed",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "nytimes.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "pbs.org": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "politico.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "propublica.org": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "reason.com": {
+    "reliability": "High",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "realclearpolitics.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "reuters.com": {
+    "reliability": "Very High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "rt.com": {
+    "reliability": "Low",
+    "lean": "Questionable / State Propaganda",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "sky.com": {
+    "reliability": "High",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "theatlantic.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "thedailybeast.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "thegatewaypundit.com": {
+    "reliability": "Very Low",
+    "lean": "Questionable / Extreme Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "theguardian.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "thehill.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Least Biased",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "theintercept.com": {
+    "reliability": "High",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "timesofisrael.com": {
+    "reliability": "High",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "time.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "trtworld.com": {
+    "reliability": "Mixed",
+    "lean": "Questionable / State Affiliated",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "usatoday.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "vice.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "vox.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Left",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "washingtonexaminer.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "washingtonpost.com": {
+    "reliability": "High",
+    "lean": "Left-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "washingtontimes.com": {
+    "reliability": "Mixed",
+    "lean": "Right",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  },
+  "wsj.com": {
+    "reliability": "Mostly Factual",
+    "lean": "Right-Center",
+    "methodology_url": "https://mediabiasfactcheck.com/methodology/"
+  }
 }

@@ -5,18 +5,33 @@
 // to real tests as you implement.
 // =============================================================================
 
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { DISCOVERY_TIER } from '../shared/constants.ts';
+import { tierDomain } from './tier.ts';
+
+const [, WIRE_SERVICE_TIER, ESTABLISHED_TIER, EMERGING_UNVERIFIED_TIER] =
+  DISCOVERY_TIER;
 
 describe('tiering', () => {
-  // T1: a domain present in ratings_cache.json gets the correct tier written,
-  // and tier_reason is non-null + human-readable.
-  it.todo('T1: cached domain -> correct tier + human-readable reason');
+  it('T1: cached non-wire domain -> established + human-readable reason', () => {
+    const result = tierDomain('nytimes.com');
 
-  // T2: a domain absent from the cache defaults to emerging_unverified, with
-  // tier_reason stating "not found in reliability dataset".
-  it.todo('T2: uncached domain -> emerging_unverified + reason');
+    expect(result.tier).toBe(ESTABLISHED_TIER);
+    expect(result.reason).toEqual(expect.any(String));
+    expect(result.reason.length).toBeGreaterThan(20);
+  });
 
-  // T3: running the tiering pass twice does not re-process already-tiered rows
-  // (idempotency via the discovery_tier IS NULL filter).
-  it.todo('T3: idempotent — already-tiered rows are not re-processed');
+  it('T2: uncached non-wire domain -> emerging unverified + reason', () => {
+    const result = tierDomain('local-new-blog.example');
+
+    expect(result.tier).toBe(EMERGING_UNVERIFIED_TIER);
+    expect(result.reason.toLowerCase()).toContain('not found in reliability dataset');
+  });
+
+  it('T3: wire agency rule wins even when the domain is cached', () => {
+    const result = tierDomain('news.bbc.com');
+
+    expect(result.tier).toBe(WIRE_SERVICE_TIER);
+    expect(result.reason).toContain('bbc.com');
+  });
 });
