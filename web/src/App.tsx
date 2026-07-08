@@ -10,7 +10,7 @@ import {
   getDisagreementEvent,
   getSources,
   getStoryCards,
-} from './api/mockClient';
+} from './api/client';
 
 type ViewKey = 'vitals' | 'sources' | 'disagreement';
 
@@ -28,6 +28,7 @@ function App() {
   const [disagreement, setDisagreement] = useState<DisagreementEvent | null>(null);
   const [selectedKey, setSelectedKey] = useState('journalists_killed');
   const [breakdown, setBreakdown] = useState<CounterBreakdown | null>(null);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -46,9 +47,30 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!selectedKey) return;
+    if (!selectedKey) {
+      setBreakdown(null);
+      setBreakdownLoading(false);
+      return;
+    }
 
-    getCounterBreakdown(selectedKey).then(setBreakdown);
+    let cancelled = false;
+    setBreakdownLoading(true);
+
+    getCounterBreakdown(selectedKey)
+      .then((nextBreakdown) => {
+        if (!cancelled) {
+          setBreakdown(nextBreakdown);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBreakdownLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedKey]);
 
   const leadStory = stories[0] ?? null;
@@ -63,6 +85,7 @@ function App() {
             counters={counters}
             selectedKey={selectedKey}
             breakdown={breakdown}
+            breakdownLoading={breakdownLoading}
             leadStory={leadStory}
             secondaryStories={secondaryStories}
             onSelectCounter={setSelectedKey}
@@ -97,8 +120,8 @@ function Header({
             </h1>
           </div>
           <div className="max-w-sm border-l border-neutral-950 pl-4 text-sm font-medium leading-6 text-neutral-800">
-            A mock-only Tier B interface: bold enough for a live newsroom wall, strict
-            enough to keep every number tied to a cited source.
+            Built for a live newsroom wall, strict enough to keep every number tied to a
+            cited source.
           </div>
         </div>
         <nav className="flex flex-wrap gap-2" aria-label="Primary">
@@ -126,6 +149,7 @@ function VitalsView({
   counters,
   selectedKey,
   breakdown,
+  breakdownLoading,
   leadStory,
   secondaryStories,
   onSelectCounter,
@@ -133,6 +157,7 @@ function VitalsView({
   counters: CounterSnapshot[];
   selectedKey: string;
   breakdown: CounterBreakdown | null;
+  breakdownLoading: boolean;
   leadStory: StoryCard | null;
   secondaryStories: StoryCard[];
   onSelectCounter: (key: string) => void;
@@ -158,7 +183,11 @@ function VitalsView({
           onSelectCounter={onSelectCounter}
         />
       </div>
-      <CounterBreakdownPanel breakdown={breakdown} />
+      <CounterBreakdownPanel
+        breakdown={breakdown}
+        loading={breakdownLoading}
+        selectedKey={selectedKey}
+      />
     </section>
   );
 }
@@ -317,7 +346,10 @@ function CounterButton({
         {formatCounterKey(counter.counter_key)}
       </div>
       <div className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-600">
-        {counter.claim_count} claims / {counter.as_of_date}
+        {counter.claim_count} claims / {counter.primary_source_ids.length} sources
+      </div>
+      <div className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-600">
+        As of {counter.as_of_date}
       </div>
       <div className="mt-4 text-sm font-semibold text-neutral-700 underline decoration-stone-400 underline-offset-4 group-hover:decoration-orange-700">
         View source claims
@@ -351,16 +383,32 @@ function Ticker({ low, high }: { low: number; high: number }) {
   if (low === high) return <span>{currentHigh.toLocaleString()}</span>;
   return (
     <span>
-      {currentLow.toLocaleString()}-{currentHigh.toLocaleString()}
+      {currentLow.toLocaleString()}–{currentHigh.toLocaleString()}
     </span>
   );
 }
 
-function CounterBreakdownPanel({ breakdown }: { breakdown: CounterBreakdown | null }) {
-  if (!breakdown) {
+function CounterBreakdownPanel({
+  breakdown,
+  loading,
+  selectedKey,
+}: {
+  breakdown: CounterBreakdown | null;
+  loading: boolean;
+  selectedKey: string;
+}) {
+  if (loading) {
     return (
       <aside className="border border-neutral-950 bg-white p-6 text-neutral-700">
         Loading source claims...
+      </aside>
+    );
+  }
+
+  if (!breakdown || breakdown.claims.length === 0) {
+    return (
+      <aside className="border border-neutral-950 bg-white p-6 text-neutral-700">
+        No source claims available for {formatCounterKey(selectedKey)} yet.
       </aside>
     );
   }
@@ -372,7 +420,7 @@ function CounterBreakdownPanel({ breakdown }: { breakdown: CounterBreakdown | nu
           Drill-down
         </p>
         <h2 className="mt-2 text-3xl font-black leading-tight tracking-tight text-neutral-950">
-          {formatCounterKey(breakdown.counter.counter_key)}
+          {formatCounterKey(breakdown.counter)}
         </h2>
         <p className="mt-2 text-sm font-medium leading-6 text-neutral-700">
           Every displayed number resolves to exact quoted evidence and a source tier.
@@ -384,19 +432,22 @@ function CounterBreakdownPanel({ breakdown }: { breakdown: CounterBreakdown | nu
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <TierBadge tier={claim.source.tier} />
               <span className="text-sm font-medium text-neutral-700">
-                {claim.source.name} / {claim.source.domain}
+                {claim.source.name} / {claim.source.tier} / {claim.source.domain}
               </span>
             </div>
             <blockquote className="border-l-4 border-orange-700 pl-4 text-lg font-black leading-7 text-neutral-950">
               "{claim.raw_quote}"
             </blockquote>
+            <div className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-neutral-600">
+              {claim.date}
+            </div>
             <a
-              className="mt-4 inline-flex text-sm font-semibold text-neutral-800 underline decoration-stone-400 underline-offset-4 hover:decoration-orange-700"
+              className="mt-4 inline-flex break-all text-sm font-semibold text-neutral-800 underline decoration-stone-400 underline-offset-4 hover:decoration-orange-700"
               href={claim.url}
               target="_blank"
               rel="noreferrer"
             >
-              Open source record
+              {claim.url}
             </a>
           </article>
         ))}

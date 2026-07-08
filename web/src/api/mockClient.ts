@@ -1,86 +1,16 @@
-// TODO: replace mock implementations with real fetch() calls to /counters, /counters/:key/breakdown, /sources once Tier A is confirmed green across all three tracks.
-
 import { CLAIM_TYPES, DISCOVERY_TIER, ORIGIN_TYPE } from '../../../shared/constants';
+import type {
+  CounterBreakdown,
+  CounterSnapshot,
+  DisagreementEvent,
+  SourceSummary,
+  StoryCard,
+} from './types';
 
 const [, WIRE_SERVICE_TIER, ESTABLISHED_TIER, EMERGING_UNVERIFIED_TIER] =
   DISCOVERY_TIER;
 const [SEARCH_DISCOVERED_ORIGIN] = ORIGIN_TYPE;
 const [, CASUALTY_COUNT_CLAIM] = CLAIM_TYPES;
-
-export type CounterSnapshot = {
-  counter_key: string;
-  low_value: number;
-  high_value: number;
-  as_of_date: string;
-  primary_source_ids: string[];
-  claim_count: number;
-};
-
-export type CounterBreakdown = {
-  counter: CounterSnapshot;
-  claims: Array<{
-    value: Record<string, unknown>;
-    raw_quote: string;
-    source: {
-      name: string | null;
-      tier: string | null;
-      domain: string;
-    };
-    url: string;
-    date: string | null;
-  }>;
-};
-
-export type SourceSummary = {
-  domain: string;
-  name: string | null;
-  tier: string | null;
-  tier_reason: string | null;
-  rating: {
-    reliability: string;
-    lean: string;
-    methodology_url: string;
-  } | null;
-};
-
-export type DisagreementClaim = {
-  claim_type: string;
-  origin_type: string;
-  value: {
-    count: number;
-    group?: string;
-    subtype?: string;
-  };
-  raw_quote: string;
-  source: {
-    name: string;
-    tier: string;
-    domain: string;
-  };
-  url: string;
-  date: string;
-};
-
-export type DisagreementEvent = {
-  id: string;
-  title: string;
-  location: string;
-  event_date: string;
-  has_disagreement: true;
-  disagreement_note: string;
-  claims: DisagreementClaim[];
-};
-
-export type StoryCard = {
-  id: string;
-  counter_key: string;
-  headline: string;
-  dek: string;
-  source: string;
-  tier: string;
-  image_credit: string;
-  image_label: string;
-};
 
 const counters: CounterSnapshot[] = [
   {
@@ -111,7 +41,7 @@ const counters: CounterSnapshot[] = [
 
 const breakdowns: Record<string, CounterBreakdown> = {
   journalists_killed: {
-    counter: counters[0],
+    counter: 'journalists_killed',
     claims: [
       {
         value: { count: 3, names: [] },
@@ -140,7 +70,7 @@ const breakdowns: Record<string, CounterBreakdown> = {
     ],
   },
   palestinians_killed: {
-    counter: counters[1],
+    counter: 'palestinians_killed',
     claims: [
       {
         value: {
@@ -177,7 +107,7 @@ const breakdowns: Record<string, CounterBreakdown> = {
     ],
   },
   children_killed: {
-    counter: counters[2],
+    counter: 'children_killed',
     claims: [
       {
         value: {
@@ -320,14 +250,10 @@ export async function getCounters(): Promise<CounterSnapshot[]> {
   return counters;
 }
 
-export async function getCounterBreakdown(key: string): Promise<CounterBreakdown> {
-  const breakdown = breakdowns[key];
-
-  if (!breakdown) {
-    throw new Error(`No mock breakdown exists for counter ${key}`);
-  }
-
-  return breakdown;
+export async function getCounterBreakdown(
+  key: string,
+): Promise<CounterBreakdown | null> {
+  return breakdowns[key] ?? null;
 }
 
 export async function getSources(): Promise<SourceSummary[]> {
