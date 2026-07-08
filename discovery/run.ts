@@ -33,6 +33,10 @@ export type DiscoveryDependencies = {
 };
 
 const SEARCH_DISCOVERED_ORIGIN = ORIGIN_TYPE[0];
+const INSTITUTIONAL_DIRECT_ORIGIN = ORIGIN_TYPE[1];
+const CPJ_DOMAIN = 'cpj.org';
+const CPJ_NAME = 'Committee to Protect Journalists';
+const CPJ_DISCOVERED_VIA = 'direct:cpj';
 const productionQueries: DiscoveryQueries = queries;
 
 export function createProductionDependencies(): DiscoveryDependencies {
@@ -46,12 +50,22 @@ export function createProductionDependencies(): DiscoveryDependencies {
 }
 
 type SourceIdRow = { id: string };
+type SourceInsertPayload = {
+  domain: string;
+  name: string | null;
+  discovered_via: string;
+  source_type?: string;
+};
 
 async function findSourceIdByDomain(
   db: DiscoveryDependencies['db'],
   domain: string,
 ): Promise<SourceIdRow | null> {
-  const { data, error } = await db.from('sources').select('id').eq('domain', domain).maybeSingle();
+  const { data, error } = await db
+    .from('sources')
+    .select('id')
+    .eq('domain', domain)
+    .maybeSingle();
   if (error) {
     throw error;
   }
@@ -60,21 +74,16 @@ async function findSourceIdByDomain(
 
 async function resolveSourceId(
   db: DiscoveryDependencies['db'],
-  domain: string,
-  discoveredVia: string,
+  source: SourceInsertPayload,
 ): Promise<string> {
-  const existing = await findSourceIdByDomain(db, domain);
+  const existing = await findSourceIdByDomain(db, source.domain);
   if (existing?.id) {
     return existing.id;
   }
 
   const { data: inserted, error: insertError } = await db
     .from('sources')
-    .insert({
-      domain,
-      name: null,
-      discovered_via: discoveredVia,
-    })
+    .insert(source)
     .select('id')
     .maybeSingle();
 
@@ -82,7 +91,7 @@ async function resolveSourceId(
     return inserted.id;
   }
 
-  const retry = await findSourceIdByDomain(db, domain);
+  const retry = await findSourceIdByDomain(db, source.domain);
   if (retry?.id) {
     return retry.id;
   }
@@ -90,7 +99,19 @@ async function resolveSourceId(
   if (insertError) {
     throw insertError;
   }
-  throw new Error(`Failed to resolve source for domain "${domain}"`);
+  throw new Error(`Failed to resolve source for domain "${source.domain}"`);
+}
+
+function isOfficialCpjUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      (url.hostname === CPJ_DOMAIN || url.hostname.endsWith(`.${CPJ_DOMAIN}`))
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function runCycle(deps: DiscoveryDependencies): Promise<void> {
@@ -108,7 +129,11 @@ export async function runCycle(deps: DiscoveryDependencies): Promise<void> {
 
     for (const result of results) {
       try {
-        const sourceId = await resolveSourceId(deps.db, result.domain, query);
+        const sourceId = await resolveSourceId(deps.db, {
+          domain: result.domain,
+          name: null,
+          discovered_via: query,
+        });
         const scraped = await deps.scrapeUrl(result.url);
 
         if (!scraped.raw_text.trim()) {
@@ -140,7 +165,50 @@ export async function runCycle(deps: DiscoveryDependencies): Promise<void> {
     }
   }
 
-  void deps.fetchCpj;
+  let cpjItems: Awaited<ReturnType<typeof deps.fetchCpj>>;
+  try {
+    cpjItems = await deps.fetchCpj();
+  } catch (err) {
+    console.error('[discovery] CPJ fetch failed:', err);
+    return;
+  }
+
+  for (const item of cpjItems) {
+    try {
+      if (!isOfficialCpjUrl(item.url)) {
+        throw new Error(`Rejected non-CPJ URL: ${item.url}`);
+      }
+      if (!item.raw_text.trim()) {
+        throw new Error(`Rejected blank CPJ raw_text for URL: ${item.url}`);
+      }
+
+      const sourceId = await resolveSourceId(deps.db, {
+        domain: CPJ_DOMAIN,
+        name: CPJ_NAME,
+        // SOURCE_TYPE has no shared constant in the frozen contract.
+        source_type: 'institutional_direct',
+        discovered_via: CPJ_DISCOVERED_VIA,
+      });
+
+      const { error: upsertError } = await deps.db.from('raw_items').upsert(
+        {
+          source_id: sourceId,
+          headline: item.headline,
+          raw_text: item.raw_text,
+          url: item.url,
+          published_at: item.published_at ?? null,
+          origin_type: INSTITUTIONAL_DIRECT_ORIGIN,
+        },
+        { onConflict: 'url', ignoreDuplicates: true },
+      );
+
+      if (upsertError) {
+        throw upsertError;
+      }
+    } catch (err) {
+      console.error('[discovery] failed processing CPJ item:', { url: item.url }, err);
+    }
+  }
 }
 
 function isDirectExecution(): boolean {
