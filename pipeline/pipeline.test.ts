@@ -14,6 +14,7 @@ import {
   type ExtractionLlm,
   type RunExtractionOptions,
 } from './extract.ts';
+import { computeSnapshots, type ComputeSnapshotsOptions } from './snapshots.ts';
 import {
   claimsDisagree,
   runDisagreementDetection,
@@ -23,18 +24,24 @@ import {
 import {
   CLAIM_TYPES,
   CONTENT_SHAPE,
+  DISCOVERY_TIER,
   EVENT_CATEGORY,
   ORIGIN_TYPE,
 } from '../shared/constants.ts';
 
 const [JOURNALIST_KILLED_CLAIM_TYPE, CASUALTY_COUNT_CLAIM_TYPE] = CLAIM_TYPES;
+const [, , ESTABLISHED_DISCOVERY_TIER, EMERGING_UNVERIFIED_DISCOVERY_TIER] =
+  DISCOVERY_TIER;
 const [, CASUALTY_EVENT_CATEGORY] = EVENT_CATEGORY;
 const [SEARCH_DISCOVERED_ORIGIN_TYPE] = ORIGIN_TYPE;
 const [PROSE_CONTENT_SHAPE] = CONTENT_SHAPE;
+const PALESTINIANS_KILLED_COUNTER = 'palestinians_killed';
+const CHILDREN_KILLED_COUNTER = 'children_killed';
 const ORIGINAL_MAX_EXTRACT_PER_RUN = process.env.MAX_EXTRACT_PER_RUN;
 
 type FakeRawItem = {
   id: string;
+  source_id: string;
   raw_text: string;
   headline: string | null;
   origin_type: string;
@@ -82,6 +89,24 @@ type FakeEventClaimRow = {
   claim_id: string;
 };
 
+type FakeSourceRow = {
+  id: string;
+  discovery_tier: string | null;
+};
+
+type FakeCounterSnapshotRow = {
+  id: string;
+  counter_key: string;
+  as_of_date: string;
+  low_value: number | null;
+  high_value: number | null;
+  primary_source_ids: string[] | null;
+  claim_count: number | null;
+  computed_at: string;
+};
+
+type FakeCounterSnapshotInsert = Omit<FakeCounterSnapshotRow, 'id' | 'computed_at'>;
+
 type FakeFilter = {
   column: string;
   value: unknown;
@@ -91,17 +116,27 @@ type FakeQueryResult<T> = Promise<{ data: T | null; error: Error | null }>;
 
 let fakeRawItemCounter = 0;
 let fakeClaimCounter = 0;
+let fakeSnapshotCounter = 0;
 
 function makeRawItem(overrides: Partial<FakeRawItem> = {}): FakeRawItem {
   fakeRawItemCounter += 1;
   return {
     id: `raw-item-${fakeRawItemCounter}`,
+    source_id: 'source-default',
     raw_text: 'No supported claim appears here.',
     headline: 'Test headline',
     origin_type: SEARCH_DISCOVERED_ORIGIN_TYPE,
     content_shape: PROSE_CONTENT_SHAPE,
     processed: false,
     created_at: new Date(2024, 0, fakeRawItemCounter).toISOString(),
+    ...overrides,
+  };
+}
+
+function makeSource(overrides: Partial<FakeSourceRow> = {}): FakeSourceRow {
+  return {
+    id: 'source-default',
+    discovery_tier: ESTABLISHED_DISCOVERY_TIER,
     ...overrides,
   };
 }
@@ -125,11 +160,60 @@ function makeClaim(overrides: Partial<FakeClaimRow> = {}): FakeClaimRow {
   };
 }
 
+function makeSnapshotDb(
+  inputs: Array<{
+    claimId: string;
+    rawItemId: string;
+    sourceId: string;
+    tier?: string | null;
+    originType?: string;
+    count: number;
+    group?: string;
+    subtype?: string | null;
+    date?: string;
+  }>,
+): FakeSupabaseClient {
+  const rawItems = inputs.map((input) =>
+    makeRawItem({
+      id: input.rawItemId,
+      source_id: input.sourceId,
+      origin_type: input.originType ?? SEARCH_DISCOVERED_ORIGIN_TYPE,
+    }),
+  );
+  const claims = inputs.map((input) =>
+    makeClaim({
+      id: input.claimId,
+      raw_item_id: input.rawItemId,
+      value: {
+        count: input.count,
+        group: input.group ?? 'palestinian',
+        subtype: input.subtype ?? 'total',
+      },
+      date_occurred: input.date ?? '2024-05-01',
+    }),
+  );
+  const sources = [
+    ...new Map(
+      inputs.map((input) => [
+        input.sourceId,
+        makeSource({
+          id: input.sourceId,
+          discovery_tier: input.tier ?? ESTABLISHED_DISCOVERY_TIER,
+        }),
+      ]),
+    ).values(),
+  ];
+
+  return new FakeSupabaseClient(rawItems, claims, sources);
+}
+
 class FakeSupabaseQuery {
   private filters: FakeFilter[] = [];
   private inFilters: { column: string; values: unknown[] }[] = [];
+  private notEqFilters: FakeFilter[] = [];
   private updateValues: Record<string, unknown> = {};
   private limitCount = Number.POSITIVE_INFINITY;
+  private deleteRequested = false;
 
   constructor(
     private readonly db: FakeSupabaseClient,
@@ -148,6 +232,14 @@ class FakeSupabaseQuery {
     return this;
   }
 
+  neq(column: string, value: unknown): this | FakeQueryResult<null> {
+    this.notEqFilters.push({ column, value });
+    if (this.deleteRequested) {
+      return this.executeDelete();
+    }
+    return this;
+  }
+
   in(column: string, values: unknown[]): this {
     this.inFilters.push({ column, values });
     return this;
@@ -162,10 +254,21 @@ class FakeSupabaseQuery {
     return this.executeSelect();
   }
 
-  insert(rows: FakeClaimInsert[] | Partial<FakeEventRow>): FakeQueryResult<null> {
+  then<TResult1 = { data: unknown[] | null; error: Error | null }, TResult2 = never>(
+    onfulfilled?:
+      ((value: { data: unknown[] | null; error: Error | null }) => TResult1) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): Promise<TResult1 | TResult2> {
+    return this.executeSelect().then(onfulfilled, onrejected);
+  }
+
+  insert(
+    rows: FakeClaimInsert[] | FakeCounterSnapshotInsert[] | Partial<FakeEventRow>,
+  ): FakeQueryResult<null> {
     if (this.table === 'claims' && Array.isArray(rows)) {
+      const claimRows = rows as FakeClaimInsert[];
       this.db.claims.push(
-        ...rows.map((row) => ({
+        ...claimRows.map((row) => ({
           id: `inserted-claim-${this.db.claims.length + 1}`,
           created_at: new Date().toISOString(),
           lat: null,
@@ -173,6 +276,21 @@ class FakeSupabaseQuery {
           geo_confidence: null,
           ...row,
         })),
+      );
+      return Promise.resolve({ data: null, error: null });
+    }
+
+    if (this.table === 'counter_snapshots' && Array.isArray(rows)) {
+      const snapshotRows = rows as FakeCounterSnapshotInsert[];
+      this.db.counterSnapshots.push(
+        ...snapshotRows.map((row) => {
+          fakeSnapshotCounter += 1;
+          return {
+            id: `snapshot-${fakeSnapshotCounter}`,
+            computed_at: new Date().toISOString(),
+            ...row,
+          };
+        }),
       );
       return Promise.resolve({ data: null, error: null });
     }
@@ -224,6 +342,11 @@ class FakeSupabaseQuery {
     return Promise.resolve({ data: null, error: null });
   }
 
+  delete(): this {
+    this.deleteRequested = true;
+    return this;
+  }
+
   update(values: Record<string, unknown>): this {
     this.updateValues = values;
     return this;
@@ -240,6 +363,7 @@ class FakeSupabaseQuery {
 
     const filteredRows = rows
       .filter((row) => this.matchesEqFilters(row))
+      .filter((row) => this.matchesNotEqFilters(row))
       .filter((row) => this.matchesInFilters(row))
       .slice(0, this.limitCount);
 
@@ -275,16 +399,41 @@ class FakeSupabaseQuery {
     return Promise.resolve({ data: null, error: null });
   }
 
+  private executeDelete(): FakeQueryResult<null> {
+    if (this.table !== 'counter_snapshots') {
+      return Promise.resolve({
+        data: null,
+        error: new Error(`Unexpected delete from ${this.table}`),
+      });
+    }
+
+    this.db.counterSnapshots = this.db.counterSnapshots.filter(
+      (row) =>
+        !(
+          this.matchesEqFilters(row) &&
+          this.matchesNotEqFilters(row) &&
+          this.matchesInFilters(row)
+        ),
+    );
+    return Promise.resolve({ data: null, error: null });
+  }
+
   private tableRows(): Record<string, unknown>[] | null {
     if (this.table === 'raw_items') return this.db.rawItems;
     if (this.table === 'claims') return this.db.claims;
     if (this.table === 'events') return this.db.events;
     if (this.table === 'event_claims') return this.db.eventClaims;
+    if (this.table === 'sources') return this.db.sources;
+    if (this.table === 'counter_snapshots') return this.db.counterSnapshots;
     return null;
   }
 
   private matchesEqFilters(row: Record<string, unknown>): boolean {
     return this.filters.every((filter) => row[filter.column] === filter.value);
+  }
+
+  private matchesNotEqFilters(row: Record<string, unknown>): boolean {
+    return this.notEqFilters.every((filter) => row[filter.column] !== filter.value);
   }
 
   private matchesInFilters(row: Record<string, unknown>): boolean {
@@ -296,12 +445,16 @@ class FakeSupabaseClient {
   claims: FakeClaimRow[] = [];
   events: FakeEventRow[] = [];
   eventClaims: FakeEventClaimRow[] = [];
+  sources: FakeSourceRow[] = [];
+  counterSnapshots: FakeCounterSnapshotRow[] = [];
 
   constructor(
     readonly rawItems: FakeRawItem[],
     claims: FakeClaimRow[] = [],
+    sources: FakeSourceRow[] = [],
   ) {
     this.claims = claims;
+    this.sources = sources;
   }
 
   from(table: string): FakeSupabaseQuery {
@@ -314,6 +467,10 @@ class FakeSupabaseClient {
 
   asDisagreementDb(): RunDisagreementDetectionOptions['db'] {
     return this as unknown as RunDisagreementDetectionOptions['db'];
+  }
+
+  asSnapshotsDb(): ComputeSnapshotsOptions['db'] {
+    return this as unknown as ComputeSnapshotsOptions['db'];
   }
 }
 
@@ -581,5 +738,153 @@ describe('pipeline — integration (implement, then convert from todo)', () => {
           entry.raw_item_id === emptyCompletedRow.id,
       ),
     ).toBe(true);
+  });
+});
+
+describe('pipeline — snapshots', () => {
+  it('excludes emerging_unverified claims from counters', async () => {
+    const db = makeSnapshotDb([
+      {
+        claimId: 'trusted-claim',
+        rawItemId: 'trusted-raw-item',
+        sourceId: 'trusted-source',
+        count: 15,
+      },
+      {
+        claimId: 'untrusted-claim',
+        rawItemId: 'untrusted-raw-item',
+        sourceId: 'untrusted-source',
+        tier: EMERGING_UNVERIFIED_DISCOVERY_TIER,
+        count: 500,
+      },
+    ]);
+
+    await computeSnapshots({ db: db.asSnapshotsDb() });
+
+    expect(db.counterSnapshots).toHaveLength(1);
+    expect(db.counterSnapshots[0]).toMatchObject({
+      counter_key: PALESTINIANS_KILLED_COUNTER,
+      as_of_date: '2024-05-01',
+      low_value: 15,
+      high_value: 15,
+      claim_count: 1,
+      primary_source_ids: ['trusted-source'],
+    });
+    expect(JSON.stringify(db.counterSnapshots)).not.toContain('500');
+    expect(db.counterSnapshots[0]?.primary_source_ids).not.toContain(
+      'untrusted-source',
+    );
+  });
+
+  it('stores a low/high range when countable sources disagree', async () => {
+    const db = makeSnapshotDb([
+      {
+        claimId: 'claim-15',
+        rawItemId: 'raw-item-15',
+        sourceId: 'source-15',
+        count: 15,
+      },
+      {
+        claimId: 'claim-20',
+        rawItemId: 'raw-item-20',
+        sourceId: 'source-20',
+        count: 20,
+      },
+    ]);
+
+    await computeSnapshots({ db: db.asSnapshotsDb() });
+
+    expect(db.counterSnapshots).toHaveLength(1);
+    expect(db.counterSnapshots[0]).toMatchObject({
+      counter_key: PALESTINIANS_KILLED_COUNTER,
+      as_of_date: '2024-05-01',
+      low_value: 15,
+      high_value: 20,
+      claim_count: 2,
+      primary_source_ids: ['source-15', 'source-20'],
+    });
+  });
+
+  it('stores equal low/high values when countable sources agree', async () => {
+    const db = makeSnapshotDb([
+      {
+        claimId: 'agreeing-claim-1',
+        rawItemId: 'agreeing-raw-item-1',
+        sourceId: 'agreeing-source-1',
+        count: 15,
+      },
+      {
+        claimId: 'agreeing-claim-2',
+        rawItemId: 'agreeing-raw-item-2',
+        sourceId: 'agreeing-source-2',
+        count: 15,
+      },
+    ]);
+
+    await computeSnapshots({ db: db.asSnapshotsDb() });
+
+    expect(db.counterSnapshots).toHaveLength(1);
+    expect(db.counterSnapshots[0]).toMatchObject({
+      counter_key: PALESTINIANS_KILLED_COUNTER,
+      low_value: 15,
+      high_value: 15,
+      claim_count: 2,
+    });
+  });
+
+  it('maps child casualty claims to children_killed', async () => {
+    const db = makeSnapshotDb([
+      {
+        claimId: 'child-claim',
+        rawItemId: 'child-raw-item',
+        sourceId: 'child-source',
+        count: 4,
+        subtype: 'child',
+      },
+    ]);
+
+    await computeSnapshots({ db: db.asSnapshotsDb() });
+
+    expect(db.counterSnapshots).toHaveLength(1);
+    expect(db.counterSnapshots[0]).toMatchObject({
+      counter_key: CHILDREN_KILLED_COUNTER,
+      low_value: 4,
+      high_value: 4,
+      claim_count: 1,
+    });
+    expect(
+      db.counterSnapshots.some(
+        (snapshot) => snapshot.counter_key === PALESTINIANS_KILLED_COUNTER,
+      ),
+    ).toBe(false);
+  });
+
+  it('rewrites snapshots idempotently instead of accumulating duplicates', async () => {
+    const db = makeSnapshotDb([
+      {
+        claimId: 'idempotent-claim-15',
+        rawItemId: 'idempotent-raw-item-15',
+        sourceId: 'idempotent-source-15',
+        count: 15,
+      },
+      {
+        claimId: 'idempotent-claim-20',
+        rawItemId: 'idempotent-raw-item-20',
+        sourceId: 'idempotent-source-20',
+        count: 20,
+      },
+    ]);
+
+    await computeSnapshots({ db: db.asSnapshotsDb() });
+    const firstRun = db.counterSnapshots.map(
+      ({ id: _id, computed_at: _computedAt, ...snapshot }) => snapshot,
+    );
+    await computeSnapshots({ db: db.asSnapshotsDb() });
+    const secondRun = db.counterSnapshots.map(
+      ({ id: _id, computed_at: _computedAt, ...snapshot }) => snapshot,
+    );
+
+    expect(db.counterSnapshots).toHaveLength(1);
+    expect(secondRun).toEqual(firstRun);
   });
 });
