@@ -103,10 +103,12 @@ const RAW_ITEMS: SeedItem[] = [
     content_shape: 'prose',
     published_at: '2024-05-01T18:00:00Z',
     raw_text:
+      'Palestinian civil defense teams said the victims were local residents ' +
+      'of Rafah. ' +
       'Medical officials in Rafah said on Wednesday that 15 people were killed ' +
       'in a series of strikes on the southern city. The figure could not be ' +
-      'independently verified. Hospitals reported dozens more wounded arriving ' +
-      'through the day.',
+      'independently verified. Palestinian hospitals reported dozens more ' +
+      'wounded arriving through the day.',
   },
   {
     domain: 'aljazeera.com',
@@ -116,6 +118,9 @@ const RAW_ITEMS: SeedItem[] = [
     content_shape: 'prose',
     published_at: '2024-05-01T20:15:00Z',
     raw_text:
+      'Gaza health officials described the dead as Palestinians from Rafah. ' +
+      'In its update, the health ministry said 20 people were killed in Rafah ' +
+      'on Wednesday. ' +
       'The health ministry said 20 people were killed in Rafah on Wednesday, ' +
       'a higher toll than earlier estimates. Officials warned the number could ' +
       'rise further as rescue operations continued overnight.',
