@@ -1,0 +1,40 @@
+{
+  "name": "conflict-ledger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "seed": "tsx scripts/seed.ts",
+    "reset_db": "tsx scripts/reset_db.ts",
+    "discovery": "tsx discovery/run.ts",
+    "tier": "tsx tiering/run.ts",
+    "signal": "tsx signal/run.ts",
+    "pipeline": "tsx pipeline/run.ts",
+    "api": "tsx api/server.ts",
+    "web": "vite --config web/vite.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.45.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "openai": "^4.56.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.3",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

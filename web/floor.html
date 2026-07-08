@@ -1,0 +1,133 @@
+<!doctype html>
+<!--
+  =============================================================================
+  web/floor.html — the Tier A SAFETY-NET page
+  =============================================================================
+  Deliberately ugly. Do NOT polish this. It exists to prove the entire product
+  thesis with zero design time: a counter number on screen that clicks through
+  to the real, sourced, verbatim quotes behind it.
+
+  It talks to the read API (default http://localhost:8787). Serve the API with
+  `pnpm run api`, then just open this file in a browser (or `pnpm run web`).
+
+  Keep this working end-to-end on REAL data. It is your fallback if Tier B
+  stalls. All real visual work happens in Tier B, not here.
+  =============================================================================
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Conflict Ledger — floor</title>
+    <style>
+      body {
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 16px;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      .counter {
+        cursor: pointer;
+        border: 1px solid #ccc;
+        padding: 12px;
+        margin: 8px 0;
+      }
+      .counter:hover {
+        background: #f5f5f5;
+      }
+      .num {
+        font-size: 28px;
+        font-weight: bold;
+      }
+      pre {
+        white-space: pre-wrap;
+        background: #fafafa;
+        border: 1px solid #eee;
+        padding: 12px;
+      }
+      .quote {
+        border-left: 3px solid #999;
+        padding-left: 10px;
+        margin: 6px 0;
+      }
+      .src {
+        color: #666;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Conflict Ledger — Tier A floor page</h1>
+    <p class="src">Ugly on purpose. Proves: a number → its exact sourced quotes.</p>
+    <div id="counters">loading counters…</div>
+    <h2 style="font-size: 15px">breakdown</h2>
+    <div id="breakdown"><em>click a counter above</em></div>
+
+    <script>
+      const API = 'http://localhost:8787';
+
+      async function loadCounters() {
+        const el = document.getElementById('counters');
+        try {
+          const res = await fetch(`${API}/counters`);
+          const data = await res.json();
+          if (!Array.isArray(data)) {
+            el.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            return;
+          }
+          el.innerHTML = '';
+          for (const c of data) {
+            const div = document.createElement('div');
+            div.className = 'counter';
+            const range =
+              c.low_value === c.high_value
+                ? `${c.low_value}`
+                : `${c.low_value}–${c.high_value}`;
+            div.innerHTML =
+              `<div class="num">${range}</div>` +
+              `<div class="src">${c.counter_key} · as of ${c.as_of_date} · ${c.claim_count} claims</div>`;
+            div.onclick = () => loadBreakdown(c.counter_key);
+            el.appendChild(div);
+          }
+          if (data.length === 0)
+            el.innerHTML = '<em>no counters yet — run the pipeline</em>';
+        } catch (e) {
+          el.innerHTML = `<pre>Could not reach API at ${API}. Is \`pnpm run api\` running?\n\n${e}</pre>`;
+        }
+      }
+
+      async function loadBreakdown(key) {
+        const el = document.getElementById('breakdown');
+        el.textContent = `loading ${key}…`;
+        try {
+          const res = await fetch(
+            `${API}/counters/${encodeURIComponent(key)}/breakdown`,
+          );
+          const data = await res.json();
+          const claims = data.claims || [];
+          if (claims.length === 0) {
+            el.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            return;
+          }
+          el.innerHTML = `<h3 style="font-size:14px">${key} — ${claims.length} claims</h3>`;
+          for (const cl of claims) {
+            const d = document.createElement('div');
+            d.className = 'quote';
+            d.innerHTML =
+              `“${cl.raw_quote}”` +
+              `<div class="src">${cl.source?.name ?? '?'} (${cl.source?.tier ?? '?'}) · ` +
+              `<a href="${cl.url}" target="_blank">${cl.source?.domain ?? cl.url}</a> · ${cl.date ?? ''}</div>`;
+            el.appendChild(d);
+          }
+        } catch (e) {
+          el.innerHTML = `<pre>error: ${e}</pre>`;
+        }
+      }
+
+      loadCounters();
+    </script>
+  </body>
+</html>

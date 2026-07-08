@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+shared/types.ts
+pnpm-lock.yaml
+
+# Reference doc with a pasteable block — do not reflow
+CODEX_PROMPT.md

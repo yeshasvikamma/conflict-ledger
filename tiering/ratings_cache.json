@@ -1,0 +1,10 @@
+{
+  "_comment": "One-time scrape of a public reliability/bias dataset (Media Bias/Fact Check or Ad Fontes), keyed by domain. Person B populates this to >=50 entries at kickoff. These few are placeholders so the file parses; replace with the real scrape. Values record what the THIRD-PARTY source says — not our opinion.",
+  "aljazeera.com": { "reliability": "mostly-factual", "lean": "left-center" },
+  "bbc.com": { "reliability": "high", "lean": "center" },
+  "nytimes.com": { "reliability": "high", "lean": "left-center" },
+  "wsj.com": { "reliability": "high", "lean": "right-center" },
+  "theguardian.com": { "reliability": "mostly-factual", "lean": "left-center" },
+  "haaretz.com": { "reliability": "high", "lean": "left-center" },
+  "timesofisrael.com": { "reliability": "mostly-factual", "lean": "center" }
+}

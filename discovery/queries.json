@@ -1,0 +1,18 @@
+{
+  "_comment": "Rotating discovery queries. Mix NARRATIVE queries (surface news prose) and INSTITUTION-SURFACING queries (surface OCHA/UN/CPJ-style primary sources). NO hardcoded domains here — these are search strings, not source names. Person A + Person B expand this over time; more diverse queries = more source diversity.",
+  "narrative": [
+    "journalist killed Gaza",
+    "Gaza casualties today",
+    "Rafah strike deaths",
+    "Gaza children killed",
+    "aid worker killed Gaza",
+    "hostages Gaza latest"
+  ],
+  "institutional": [
+    "official journalist casualty count Gaza",
+    "OCHA situation report Gaza",
+    "UN casualty figures Gaza",
+    "WHO Gaza health casualties report",
+    "press freedom organization journalists killed Gaza"
+  ]
+}
