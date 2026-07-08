@@ -1,0 +1,40 @@
+/*
+ * Design tokens for the Conflict Ledger.
+ *
+ * Palette is a register/ledger metaphor: cool stone paper, near-black ink,
+ * and exactly one accent (a muted oxblood "ledger red") reserved for the
+ * numbers that matter — counts, ranges, disagreement. Nothing else uses it.
+ */
+
+:root {
+  /* Color: surfaces */
+  --color-paper: #eae7de;
+  --color-paper-raised: #f7f5ef;
+  --color-paper-sunken: #dfdcd1;
+
+  /* Color: ink */
+  --color-ink: #17181a;
+  --color-ink-muted: #5a5b53;
+  --color-ink-faint: #8b8c81;
+
+  /* Color: structure */
+  --color-rule: #cec9ba;
+  --color-rule-strong: #b3ad9a;
+
+  /* Color: the one accent — ledger red, reserved for counts + disagreement */
+  --color-accent: #8a2f2a;
+  --color-accent-strong: #6e2521;
+  --color-accent-soft: #f0e0da;
+
+  /* Type */
+  --font-display: 'IBM Plex Serif', ui-serif, Georgia, serif;
+  --font-body: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Radii: square-cornered, like ruled paper — never fully rounded except dots */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+
+  /* Shadow: reserved for the modal only, kept flat and faint */
+  --shadow-modal: 0 12px 40px -12px rgb(23 24 26 / 0.35);
+}
