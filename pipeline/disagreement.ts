@@ -13,6 +13,27 @@
 //                 event_claims (insert).
 // =============================================================================
 
+import { randomUUID } from 'node:crypto';
+import { CLAIM_TYPES, EVENT_CATEGORY } from '../shared/constants.ts';
+import { serviceClient } from '../shared/supabaseClient.ts';
+import type { Database, Json } from '../shared/types.ts';
+
+const [JOURNALIST_KILLED_CLAIM_TYPE, CASUALTY_COUNT_CLAIM_TYPE] = CLAIM_TYPES;
+const [, CASUALTY_EVENT_CATEGORY, JOURNALIST_EVENT_CATEGORY] = EVENT_CATEGORY;
+const MAX_CANDIDATE_CLAIMS = 1000;
+
+type DisagreementDb = Pick<ReturnType<typeof serviceClient>, 'from'>;
+type ClaimRow = Pick<
+  Database['public']['Tables']['claims']['Row'],
+  'id' | 'claim_type' | 'date_occurred' | 'location' | 'value'
+>;
+type EventInsert = Database['public']['Tables']['events']['Insert'];
+type EventClaimInsert = Database['public']['Tables']['event_claims']['Insert'];
+
+export interface RunDisagreementDetectionOptions {
+  db?: DisagreementDb;
+}
+
 /** A minimal claim view for the predicate (subset of the claims row). */
 export interface ClaimForCompare {
   id: string;
@@ -78,6 +99,127 @@ export function claimsDisagree(a: ClaimForCompare, b: ClaimForCompare): boolean 
   return a.value.count !== b.value.count;
 }
 
+function claimValue(value: Json): ClaimForCompare['value'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as ClaimForCompare['value'];
+}
+
+function compareClaim(row: ClaimRow): ClaimForCompare {
+  return {
+    id: row.id,
+    claim_type: row.claim_type,
+    date_occurred: row.date_occurred,
+    location: row.location,
+    value: claimValue(row.value),
+  };
+}
+
+function eventCategory(claimType: string): string {
+  return claimType === JOURNALIST_KILLED_CLAIM_TYPE
+    ? JOURNALIST_EVENT_CATEGORY
+    : CASUALTY_EVENT_CATEGORY;
+}
+
+function countForNote(claim: ClaimForCompare): string {
+  return typeof claim.value.count === 'number' ? String(claim.value.count) : 'unknown';
+}
+
+function disagreementNote(a: ClaimForCompare, b: ClaimForCompare): string {
+  const date = a.date_occurred ?? b.date_occurred ?? 'unknown date';
+  const location = a.location ?? b.location ?? 'unknown location';
+  return `One claim reports ${countForNote(a)} on ${date} in ${location}; another reports ${countForNote(b)} for the same date/location.`;
+}
+
+function eventRowForPair(a: ClaimForCompare, b: ClaimForCompare): EventInsert {
+  const location = a.location ?? b.location;
+  const eventDate = a.date_occurred ?? b.date_occurred;
+  return {
+    id: randomUUID(),
+    category: eventCategory(a.claim_type),
+    event_date: eventDate,
+    has_disagreement: true,
+    disagreement_note: disagreementNote(a, b),
+    location,
+  };
+}
+
+async function existingDisagreementEventId(
+  db: DisagreementDb,
+  a: ClaimForCompare,
+  b: ClaimForCompare,
+): Promise<string | null> {
+  const claimIds = [a.id, b.id];
+  const { data: links, error: linkError } = await db
+    .from('event_claims')
+    .select('event_id, claim_id')
+    .in('claim_id', claimIds)
+    .limit(MAX_CANDIDATE_CLAIMS);
+  if (linkError) throw linkError;
+
+  const claimsByEvent = new Map<string, Set<string>>();
+  for (const link of links ?? []) {
+    const claims = claimsByEvent.get(link.event_id) ?? new Set<string>();
+    claims.add(link.claim_id);
+    claimsByEvent.set(link.event_id, claims);
+  }
+
+  const candidateEventIds = [...claimsByEvent.entries()]
+    .filter(([, linkedClaimIds]) =>
+      claimIds.every((claimId) => linkedClaimIds.has(claimId)),
+    )
+    .map(([eventId]) => eventId);
+
+  if (candidateEventIds.length === 0) return null;
+
+  const { data: events, error: eventError } = await db
+    .from('events')
+    .select('id')
+    .in('id', candidateEventIds)
+    .eq('has_disagreement', true)
+    .limit(1);
+  if (eventError) throw eventError;
+
+  return events?.[0]?.id ?? null;
+}
+
+async function linkClaimsToEvent(
+  db: DisagreementDb,
+  eventId: string,
+  a: ClaimForCompare,
+  b: ClaimForCompare,
+): Promise<void> {
+  const rows: EventClaimInsert[] = [
+    { event_id: eventId, claim_id: a.id },
+    { event_id: eventId, claim_id: b.id },
+  ];
+  const { error } = await db
+    .from('event_claims')
+    .upsert(rows, { onConflict: 'event_id,claim_id' });
+  if (error) throw error;
+}
+
+async function recordDisagreement(
+  db: DisagreementDb,
+  a: ClaimForCompare,
+  b: ClaimForCompare,
+): Promise<void> {
+  const existingEventId = await existingDisagreementEventId(db, a, b);
+  if (existingEventId) {
+    await linkClaimsToEvent(db, existingEventId, a, b);
+    return;
+  }
+
+  const event = eventRowForPair(a, b);
+  const { error } = await db.from('events').insert(event);
+  if (error) throw error;
+
+  if (!event.id) {
+    throw new Error('Disagreement event was inserted without an id');
+  }
+
+  await linkClaimsToEvent(db, event.id, a, b);
+}
+
 /**
  * Scan candidate claims, find disagreeing pairs, and record them.
  *
@@ -88,6 +230,36 @@ export function claimsDisagree(a: ClaimForCompare, b: ClaimForCompare): boolean 
  *     has_disagreement=true, write a short disagreement_note (see §3 examples)
  *   - never mutate the claims themselves
  */
-export async function runDisagreementDetection(): Promise<void> {
-  throw new Error('runDisagreementDetection not implemented — see pipeline/AGENT.md');
+export async function runDisagreementDetection(
+  options: RunDisagreementDetectionOptions = {},
+): Promise<void> {
+  const db = options.db ?? serviceClient();
+  const { data, error } = await db
+    .from('claims')
+    .select('id, claim_type, date_occurred, location, value')
+    .in('claim_type', [JOURNALIST_KILLED_CLAIM_TYPE, CASUALTY_COUNT_CLAIM_TYPE])
+    .limit(MAX_CANDIDATE_CLAIMS);
+  if (error) throw error;
+
+  const claims = (data ?? []).map((row) => compareClaim(row as ClaimRow));
+  const claimsByType = new Map<string, ClaimForCompare[]>();
+  for (const claim of claims) {
+    const group = claimsByType.get(claim.claim_type) ?? [];
+    group.push(claim);
+    claimsByType.set(claim.claim_type, group);
+  }
+
+  for (const sameTypeClaims of claimsByType.values()) {
+    for (let i = 0; i < sameTypeClaims.length; i += 1) {
+      for (let j = i + 1; j < sameTypeClaims.length; j += 1) {
+        const a = sameTypeClaims[i];
+        const b = sameTypeClaims[j];
+        if (!a || !b) continue;
+        if (daysApart(a.date_occurred, b.date_occurred) > 1) continue;
+        if (claimsDisagree(a, b)) {
+          await recordDisagreement(db, a, b);
+        }
+      }
+    }
+  }
 }

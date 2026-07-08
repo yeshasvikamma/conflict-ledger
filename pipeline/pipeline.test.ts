@@ -14,10 +14,21 @@ import {
   type ExtractionLlm,
   type RunExtractionOptions,
 } from './extract.ts';
-import { claimsDisagree, type ClaimForCompare } from './disagreement.ts';
-import { CLAIM_TYPES, CONTENT_SHAPE, ORIGIN_TYPE } from '../shared/constants.ts';
+import {
+  claimsDisagree,
+  runDisagreementDetection,
+  type ClaimForCompare,
+  type RunDisagreementDetectionOptions,
+} from './disagreement.ts';
+import {
+  CLAIM_TYPES,
+  CONTENT_SHAPE,
+  EVENT_CATEGORY,
+  ORIGIN_TYPE,
+} from '../shared/constants.ts';
 
 const [JOURNALIST_KILLED_CLAIM_TYPE, CASUALTY_COUNT_CLAIM_TYPE] = CLAIM_TYPES;
+const [, CASUALTY_EVENT_CATEGORY] = EVENT_CATEGORY;
 const [SEARCH_DISCOVERED_ORIGIN_TYPE] = ORIGIN_TYPE;
 const [PROSE_CONTENT_SHAPE] = CONTENT_SHAPE;
 const ORIGINAL_MAX_EXTRACT_PER_RUN = process.env.MAX_EXTRACT_PER_RUN;
@@ -42,6 +53,35 @@ type FakeClaimInsert = {
   is_unverified_signal: boolean;
 };
 
+type FakeClaimRow = FakeClaimInsert & {
+  id: string;
+  created_at: string;
+  lat: number | null;
+  lng: number | null;
+  geo_confidence: number | null;
+};
+
+type FakeEventRow = {
+  id: string;
+  title: string | null;
+  neutral_summary: string | null;
+  location: string | null;
+  lat: number | null;
+  lng: number | null;
+  category: string | null;
+  event_date: string | null;
+  framing_notes: unknown | null;
+  has_disagreement: boolean;
+  disagreement_note: string | null;
+  first_seen_at: string;
+  last_updated_at: string;
+};
+
+type FakeEventClaimRow = {
+  event_id: string;
+  claim_id: string;
+};
+
 type FakeFilter = {
   column: string;
   value: unknown;
@@ -50,6 +90,7 @@ type FakeFilter = {
 type FakeQueryResult<T> = Promise<{ data: T | null; error: Error | null }>;
 
 let fakeRawItemCounter = 0;
+let fakeClaimCounter = 0;
 
 function makeRawItem(overrides: Partial<FakeRawItem> = {}): FakeRawItem {
   fakeRawItemCounter += 1;
@@ -65,8 +106,28 @@ function makeRawItem(overrides: Partial<FakeRawItem> = {}): FakeRawItem {
   };
 }
 
+function makeClaim(overrides: Partial<FakeClaimRow> = {}): FakeClaimRow {
+  fakeClaimCounter += 1;
+  return {
+    id: `claim-${fakeClaimCounter}`,
+    raw_item_id: `raw-item-for-claim-${fakeClaimCounter}`,
+    claim_type: CASUALTY_COUNT_CLAIM_TYPE,
+    value: { count: 15, group: 'palestinian', subtype: 'total' },
+    raw_quote: `${fakeClaimCounter} people were killed in Rafah.`,
+    date_occurred: '2024-05-01',
+    location: 'Rafah',
+    is_unverified_signal: false,
+    created_at: new Date(2024, 0, fakeClaimCounter).toISOString(),
+    lat: null,
+    lng: null,
+    geo_confidence: null,
+    ...overrides,
+  };
+}
+
 class FakeSupabaseQuery {
   private filters: FakeFilter[] = [];
+  private inFilters: { column: string; values: unknown[] }[] = [];
   private updateValues: Record<string, unknown> = {};
   private limitCount = Number.POSITIVE_INFINITY;
 
@@ -87,23 +148,79 @@ class FakeSupabaseQuery {
     return this;
   }
 
+  in(column: string, values: unknown[]): this {
+    this.inFilters.push({ column, values });
+    return this;
+  }
+
   order(_column: string, _options: { ascending: boolean }): this {
     return this;
   }
 
-  limit(count: number): FakeQueryResult<FakeRawItem[]> {
+  limit(count: number): FakeQueryResult<unknown[]> {
     this.limitCount = count;
     return this.executeSelect();
   }
 
-  insert(rows: FakeClaimInsert[]): FakeQueryResult<null> {
-    if (this.table !== 'claims') {
+  insert(rows: FakeClaimInsert[] | Partial<FakeEventRow>): FakeQueryResult<null> {
+    if (this.table === 'claims' && Array.isArray(rows)) {
+      this.db.claims.push(
+        ...rows.map((row) => ({
+          id: `inserted-claim-${this.db.claims.length + 1}`,
+          created_at: new Date().toISOString(),
+          lat: null,
+          lng: null,
+          geo_confidence: null,
+          ...row,
+        })),
+      );
+      return Promise.resolve({ data: null, error: null });
+    }
+
+    if (this.table === 'events' && !Array.isArray(rows)) {
+      this.db.events.push({
+        id: rows.id ?? `event-${this.db.events.length + 1}`,
+        title: rows.title ?? null,
+        neutral_summary: rows.neutral_summary ?? null,
+        location: rows.location ?? null,
+        lat: rows.lat ?? null,
+        lng: rows.lng ?? null,
+        category: rows.category ?? null,
+        event_date: rows.event_date ?? null,
+        framing_notes: rows.framing_notes ?? null,
+        has_disagreement: rows.has_disagreement ?? false,
+        disagreement_note: rows.disagreement_note ?? null,
+        first_seen_at: rows.first_seen_at ?? new Date().toISOString(),
+        last_updated_at: rows.last_updated_at ?? new Date().toISOString(),
+      });
+      return Promise.resolve({ data: null, error: null });
+    }
+
+    return Promise.resolve({
+      data: null,
+      error: new Error(`Unexpected insert into ${this.table}`),
+    });
+  }
+
+  upsert(
+    rows: FakeEventClaimRow[],
+    _options: { onConflict: string },
+  ): FakeQueryResult<null> {
+    if (this.table !== 'event_claims') {
       return Promise.resolve({
         data: null,
-        error: new Error(`Unexpected insert into ${this.table}`),
+        error: new Error(`Unexpected upsert into ${this.table}`),
       });
     }
-    this.db.claims.push(...rows);
+
+    for (const row of rows) {
+      const exists = this.db.eventClaims.some(
+        (existing) =>
+          existing.event_id === row.event_id && existing.claim_id === row.claim_id,
+      );
+      if (!exists) this.db.eventClaims.push({ ...row });
+    }
+
     return Promise.resolve({ data: null, error: null });
   }
 
@@ -112,23 +229,21 @@ class FakeSupabaseQuery {
     return this;
   }
 
-  private executeSelect(): FakeQueryResult<FakeRawItem[]> {
-    if (this.table !== 'raw_items') {
+  private executeSelect(): FakeQueryResult<unknown[]> {
+    const rows = this.tableRows();
+    if (!rows) {
       return Promise.resolve({
         data: null,
         error: new Error(`Unexpected select from ${this.table}`),
       });
     }
 
-    const rows = this.db.rawItems
-      .filter((row) =>
-        this.filters.every(
-          (filter) => row[filter.column as keyof FakeRawItem] === filter.value,
-        ),
-      )
+    const filteredRows = rows
+      .filter((row) => this.matchesEqFilters(row))
+      .filter((row) => this.matchesInFilters(row))
       .slice(0, this.limitCount);
 
-    return Promise.resolve({ data: rows, error: null });
+    return Promise.resolve({ data: filteredRows, error: null });
   }
 
   private executeUpdate(): FakeQueryResult<null> {
@@ -159,12 +274,35 @@ class FakeSupabaseQuery {
 
     return Promise.resolve({ data: null, error: null });
   }
+
+  private tableRows(): Record<string, unknown>[] | null {
+    if (this.table === 'raw_items') return this.db.rawItems;
+    if (this.table === 'claims') return this.db.claims;
+    if (this.table === 'events') return this.db.events;
+    if (this.table === 'event_claims') return this.db.eventClaims;
+    return null;
+  }
+
+  private matchesEqFilters(row: Record<string, unknown>): boolean {
+    return this.filters.every((filter) => row[filter.column] === filter.value);
+  }
+
+  private matchesInFilters(row: Record<string, unknown>): boolean {
+    return this.inFilters.every((filter) => filter.values.includes(row[filter.column]));
+  }
 }
 
 class FakeSupabaseClient {
-  claims: FakeClaimInsert[] = [];
+  claims: FakeClaimRow[] = [];
+  events: FakeEventRow[] = [];
+  eventClaims: FakeEventClaimRow[] = [];
 
-  constructor(readonly rawItems: FakeRawItem[]) {}
+  constructor(
+    readonly rawItems: FakeRawItem[],
+    claims: FakeClaimRow[] = [],
+  ) {
+    this.claims = claims;
+  }
 
   from(table: string): FakeSupabaseQuery {
     return new FakeSupabaseQuery(this, table);
@@ -172,6 +310,10 @@ class FakeSupabaseClient {
 
   asExtractionDb(): RunExtractionOptions['db'] {
     return this as unknown as RunExtractionOptions['db'];
+  }
+
+  asDisagreementDb(): RunDisagreementDetectionOptions['db'] {
+    return this as unknown as RunDisagreementDetectionOptions['db'];
   }
 }
 
@@ -297,10 +439,64 @@ describe('pipeline — integration (implement, then convert from todo)', () => {
 
   // T2: 15 vs 20 casualty claims -> event.has_disagreement=true AND both claims
   // remain in the DB unmodified (append-only proof).
-  it.todo('T2: disagreement flags event and never mutates claims');
+  it('T2: disagreement flags event and never mutates claims', async () => {
+    const claimA = makeClaim({
+      id: 'claim-a',
+      value: { count: 15, group: 'palestinian', subtype: 'total' },
+      raw_quote:
+        'Medical officials in Rafah said on Wednesday that 15 people were killed.',
+    });
+    const claimB = makeClaim({
+      id: 'claim-b',
+      value: { count: 20, group: 'palestinian', subtype: 'total' },
+      raw_quote:
+        'The health ministry said 20 people were killed in Rafah on Wednesday.',
+    });
+    const db = new FakeSupabaseClient([], [claimA, claimB]);
+    const claimsBefore = JSON.stringify(db.claims);
+
+    await runDisagreementDetection({ db: db.asDisagreementDb() });
+    await runDisagreementDetection({ db: db.asDisagreementDb() });
+
+    const disagreementEvents = db.events.filter((event) => event.has_disagreement);
+    expect(disagreementEvents).toHaveLength(1);
+    expect(disagreementEvents[0]).toMatchObject({
+      category: CASUALTY_EVENT_CATEGORY,
+      event_date: '2024-05-01',
+      location: 'Rafah',
+      has_disagreement: true,
+    });
+    expect(disagreementEvents[0]?.disagreement_note).toContain('15');
+    expect(disagreementEvents[0]?.disagreement_note).toContain('20');
+
+    const linkedClaimIds = db.eventClaims
+      .filter((link) => link.event_id === disagreementEvents[0]?.id)
+      .map((link) => link.claim_id)
+      .sort();
+    expect(linkedClaimIds).toEqual(['claim-a', 'claim-b']);
+    expect(db.eventClaims).toHaveLength(2);
+    expect(JSON.stringify(db.claims)).toBe(claimsBefore);
+  });
 
   // T3: two agreeing claims -> no disagreement flag.
-  it.todo('T3: agreeing claims produce no disagreement flag');
+  it('T3: agreeing claims produce no disagreement flag', async () => {
+    const claimA = makeClaim({
+      id: 'agreeing-claim-a',
+      value: { count: 15, group: 'palestinian', subtype: 'total' },
+    });
+    const claimB = makeClaim({
+      id: 'agreeing-claim-b',
+      value: { count: 15, group: 'palestinian', subtype: 'total' },
+    });
+    const db = new FakeSupabaseClient([], [claimA, claimB]);
+    const claimsBefore = JSON.stringify(db.claims);
+
+    await runDisagreementDetection({ db: db.asDisagreementDb() });
+
+    expect(db.events.filter((event) => event.has_disagreement)).toHaveLength(0);
+    expect(db.eventClaims).toHaveLength(0);
+    expect(JSON.stringify(db.claims)).toBe(claimsBefore);
+  });
 
   // T4: a value failing its zod schema (e.g. count as string) is rejected
   // before insert, logged, never coerced.
