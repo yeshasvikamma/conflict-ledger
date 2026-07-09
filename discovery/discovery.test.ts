@@ -206,6 +206,7 @@ function createFakeDb(options: FakeDbOptions = {}) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.resetModules();
   serviceClientMock.mockReset();
@@ -568,5 +569,41 @@ describe('discovery', () => {
     expect(operation).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(sleep).toHaveBeenCalledWith(20);
+  });
+
+  it('T5: polling runs once immediately and again after the discovery interval', async () => {
+    vi.useFakeTimers();
+    const runModule = await import('./run.ts');
+    const { db } = createFakeDb();
+    const previousInterval = process.env.DISCOVERY_INTERVAL_SECONDS;
+    process.env.DISCOVERY_INTERVAL_SECONDS = '2';
+    const deps: Parameters<typeof runModule.startDiscoveryPolling>[0] = {
+      db: db as unknown as Parameters<typeof runModule.runCycle>[0]['db'],
+      serpSearch: vi.fn(async () => [
+        { url: 'https://example.com/story-1', domain: 'example.com', title: 'Story' },
+      ]),
+      scrapeUrl: vi.fn(async () => ({ headline: 'Story', raw_text: 'body text' })),
+      fetchCpj: vi.fn(async () => []),
+      queries: { narrative: ['journalist killed Gaza'], institutional: [] },
+    };
+
+    const timer = await runModule.startDiscoveryPolling(deps);
+
+    try {
+      expect(deps.serpSearch).toHaveBeenCalledTimes(1);
+      expect(deps.scrapeUrl).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(deps.serpSearch).toHaveBeenCalledTimes(2);
+      expect(deps.scrapeUrl).toHaveBeenCalledTimes(2);
+    } finally {
+      clearInterval(timer);
+      if (previousInterval === undefined) {
+        delete process.env.DISCOVERY_INTERVAL_SECONDS;
+      } else {
+        process.env.DISCOVERY_INTERVAL_SECONDS = previousInterval;
+      }
+    }
   });
 });

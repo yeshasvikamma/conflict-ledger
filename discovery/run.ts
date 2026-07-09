@@ -39,6 +39,16 @@ const CPJ_NAME = 'Committee to Protect Journalists';
 const CPJ_DISCOVERED_VIA = 'direct:cpj';
 const productionQueries: DiscoveryQueries = queries;
 
+function intervalMs(): number {
+  const seconds = Number.parseInt(process.env.DISCOVERY_INTERVAL_SECONDS ?? '30', 10);
+
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error('DISCOVERY_INTERVAL_SECONDS must be a positive number of seconds');
+  }
+
+  return seconds * 1000;
+}
+
 export function createProductionDependencies(): DiscoveryDependencies {
   return {
     db: serviceClient(),
@@ -211,6 +221,18 @@ export async function runCycle(deps: DiscoveryDependencies): Promise<void> {
   }
 }
 
+export async function startDiscoveryPolling(
+  deps: DiscoveryDependencies = createProductionDependencies(),
+): Promise<NodeJS.Timeout> {
+  await runCycle(deps);
+
+  return setInterval(() => {
+    runCycle(deps).catch((err: unknown) => {
+      console.error('[discovery] poll failed:', err);
+    });
+  }, intervalMs());
+}
+
 function isDirectExecution(): boolean {
   const entryFile = process.argv[1];
   if (!entryFile) return false;
@@ -219,7 +241,7 @@ function isDirectExecution(): boolean {
 
 async function main(): Promise<void> {
   await import('dotenv/config');
-  await runCycle(createProductionDependencies());
+  await startDiscoveryPolling();
 }
 
 if (isDirectExecution()) {
