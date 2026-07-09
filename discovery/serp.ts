@@ -14,7 +14,10 @@ export interface SerpResult {
 export type SerpRequest = (query: string) => Promise<unknown>;
 
 function normalizeDomain(hostname: string): string {
-  return hostname.toLowerCase().replace(/^www\./, '').replace(/\.+$/, '');
+  return hostname
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.+$/, '');
 }
 
 function toHttpUrl(input: unknown): URL | null {
@@ -35,7 +38,9 @@ function extractOrganicArray(payload: unknown): unknown[] {
 
   const organic = (payload as Record<string, unknown>).organic;
   if (!Array.isArray(organic)) {
-    throw new Error('[discovery] SERP response is malformed: expected an organic array');
+    throw new Error(
+      '[discovery] SERP response is malformed: expected an organic array',
+    );
   }
   return organic;
 }

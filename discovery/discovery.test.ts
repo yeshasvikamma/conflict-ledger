@@ -550,7 +550,23 @@ describe('discovery', () => {
     );
   });
 
-  // T4: a simulated 429 from the mocked Bright Data client triggers retry with
-  // backoff (assert retry count), not a crash.
-  it.todo('T4: 429 triggers backoff+retry, not a crash');
+  it('T4: 429 triggers backoff and retries successfully', async () => {
+    const { withBackoff } = await import('./scrape.ts');
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('rate limited'), { status: 429 }))
+      .mockResolvedValueOnce({
+        headline: null,
+        raw_text: 'Exact article wording after retry.',
+      });
+    const sleep = vi.fn(async () => {});
+
+    await expect(withBackoff(operation, { baseMs: 20, sleep })).resolves.toEqual({
+      headline: null,
+      raw_text: 'Exact article wording after retry.',
+    });
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(20);
+  });
 });

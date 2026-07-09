@@ -50,7 +50,11 @@ describe('parseSerpResponse', () => {
     });
 
     expect(results).toEqual([
-      { url: 'https://news.example.com/update', domain: 'news.example.com', title: 'Update' },
+      {
+        url: 'https://news.example.com/update',
+        domain: 'news.example.com',
+        title: 'Update',
+      },
     ]);
   });
 
@@ -80,7 +84,9 @@ describe('parseSerpResponse', () => {
       ],
     });
 
-    expect(results).toEqual([{ url: 'http://www.good.com./ok', domain: 'good.com', title: 'good' }]);
+    expect(results).toEqual([
+      { url: 'http://www.good.com./ok', domain: 'good.com', title: 'good' },
+    ]);
   });
 
   it('returns [] for empty organic array', () => {
@@ -98,8 +104,12 @@ describe('serpSearch', () => {
   it('rejects empty or whitespace-only query', async () => {
     const request = vi.fn();
 
-    await expect(serpSearch('', request)).rejects.toThrow('serpSearch query must be non-empty');
-    await expect(serpSearch('   ', request)).rejects.toThrow('serpSearch query must be non-empty');
+    await expect(serpSearch('', request)).rejects.toThrow(
+      'serpSearch query must be non-empty',
+    );
+    await expect(serpSearch('   ', request)).rejects.toThrow(
+      'serpSearch query must be non-empty',
+    );
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -107,11 +117,17 @@ describe('serpSearch', () => {
     process.env.BRIGHTDATA_API_KEY = 'test-key';
     process.env.BRIGHTDATA_SERP_ZONE = 'test-serp-zone';
 
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ organic: [{ link: 'https://example.com/story', title: 'Story' }] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            organic: [{ link: 'https://example.com/story', title: 'Story' }],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
     );
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
@@ -119,7 +135,7 @@ describe('serpSearch', () => {
     const results = await serpSearch(query);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.brightdata.com/request');
     expect(init.method).toBe('POST');
 
@@ -153,7 +169,9 @@ describe('serpSearch', () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
-    await expect(serpSearch('query')).rejects.toThrow('[discovery] Missing BRIGHTDATA_API_KEY');
+    await expect(serpSearch('query')).rejects.toThrow(
+      '[discovery] Missing BRIGHTDATA_API_KEY',
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -164,7 +182,9 @@ describe('serpSearch', () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
-    await expect(serpSearch('query')).rejects.toThrow('[discovery] Missing BRIGHTDATA_SERP_ZONE');
+    await expect(serpSearch('query')).rejects.toThrow(
+      '[discovery] Missing BRIGHTDATA_SERP_ZONE',
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
